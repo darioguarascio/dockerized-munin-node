@@ -1,0 +1,24 @@
+version: "3.9"
+
+volumes:
+  data-munin-node:
+    driver: local
+
+services:
+  munin-node:
+    image: darioguarascio/munin-node:latest
+    privileged: true
+    restart: "always"
+    build:
+      network: host
+      context: ./docker/munin-node
+    environment:
+      MUNIN_ALLOW: ${MUNIN_ALLOW:-0.0.0.0/0}
+      MUNIN_ENABLED_PLUGINS: ${MUNIN_ENABLED_PLUGINS:-traffic cpu disk df network system* load memory uptime}
+      MUNIN_LINKED_PLUGINS: ${MUNIN_LINKED_PLUGINS:-}
+    volumes:
+      - data-munin-node:/data
+    ports:
+      - ${MUNIN_LISTEN:-4949}:4949
+    env_file:
+      - ${MUNIN_ENV_FILE:-.env}
