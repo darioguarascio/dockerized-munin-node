@@ -7,11 +7,6 @@ A docker-based munin node that can be spinned specificying what plugins to load
 1. Add the following to your _existing_ `docker-compose.yml`
 
 ```
-volumes:
-  data-munin-node:
-    driver: local
-
-...
 services:
   munin-node:
     image: darioguarascio/munin-node:latest
@@ -22,7 +17,7 @@ services:
       MUNIN_ENABLED_PLUGINS: ${MUNIN_ENABLED_PLUGINS:-traffic cpu df netstat system* load memory uptime}
       MUNIN_LINKED_PLUGINS: ${MUNIN_LINKED_PLUGINS:-}
     volumes:
-      - data-munin-node:/data
+      - /tmp/munin-node:/data
     ports:
       - ${MUNIN_LISTEN:-127.0.0.1:4949}:4949
     env_file:
@@ -72,5 +67,10 @@ postgres_locks_:postgres_locks_ALL
 
 ```
 
-
+#### Varnish linked plugin
+To load varnish, there is a workaround.
+Adding a cronjob to fetch stats on *host* machine that generates a files that is mounted into the munin-node container:
+```
+* * * * * cd /root/ && /usr/local/bin/docker-compose exec -T varnish varnishstat -x > /tmp/munin-node/varnishstat2 && mv /tmp/munin-node/varnishstat2 /tmp/munin-node/varnishstat
+```
 
