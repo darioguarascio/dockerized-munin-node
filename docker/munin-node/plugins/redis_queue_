@@ -43,18 +43,18 @@ graph_vlabel size
 ";
 
 for e in $MUNIN_REDIS_QUEUE_CONFIG; do
-    IFS=: read RCMD RKEY WARN CRITICAL <<< "$e"
+    echo $e | { IFS=: read RCMD RKEY WARN CRITICAL;
     echo  "$RKEY.label count
 $RKEY.warning :$WARN
 $RKEY.critical :$CRITICAL
 $RKEY.label $RKEY ($RCMD)"
-
+}
 done
 
 else
     for e in $MUNIN_REDIS_QUEUE_CONFIG; do
-        IFS=: read RCMD RKEY WARN CRITICAL <<< "$e"
-        N=`redis-cli $ip_socket $port_path $passwd $RCMD $RKEY`
-        echo  "$RKEY.value $N"
+        echo $e | { IFS=: read RCMD RKEY WARN CRITICAL;
+        N=`redis-cli $ip_socket $port_path $passwd $RCMD $RKEY`;
+        echo  "$RKEY.value $N"; }
     done
 fi
