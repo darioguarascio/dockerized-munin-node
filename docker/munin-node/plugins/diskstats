@@ -1,6 +1,4 @@
 #!/usr/bin/perl
-# -*- perl -*-
-# vim: sts=4 sw=4 ts=8
 
 # Docs at the bottom
 
@@ -18,10 +16,13 @@ use Storable qw(nfreeze thaw);
 my $poll_interval = 300;
 
 # Graph width defaults to 400 in Munin 1.4
-my $graph_width = $ENV{'graph_width'} ? $ENV{'graph_width'} : 400;
+my $default_graph_width = 400;
 
-# Should lables be trimmed to fit graph width?
-my $trim_labels = $ENV{'trim_labels'};
+# unspecified/empty: use munin's default graph width
+# zero: calculate the graph width depending on the length of the disk labels
+# non-zero: specify the fixed graph width; long device labels may get trimmed
+my $graph_width = $ENV{'graph_width'};
+$graph_width = undef if (defined($graph_width) and ($graph_width eq ''));
 
 my $plugin_name = $Munin::Plugin::me;
 
@@ -29,10 +30,16 @@ my $plugin_name = $Munin::Plugin::me;
 need_multigraph();
 
 # Handle munin 'autoconf' command
-do_autoconf() if ( $ARGV[0] && $ARGV[0] eq 'autoconf' );
+if ( $ARGV[0] && $ARGV[0] eq 'autoconf' ) {
+    do_autoconf();
+    exit 0;
+}
 
 # Fetch current counter values
 my %cur_diskstats = fetch_device_counters();
+
+# Fetch uptime to detect system reboot
+my ($uptime) = fetch_uptime();
 
 # Weed out unwanted devices
 filter_device_list( \%cur_diskstats );
@@ -41,14 +48,16 @@ filter_device_list( \%cur_diskstats );
 # This can only be done after getting the device data
 if ( defined $ARGV[0] && $ARGV[0] eq 'config' ) {
     do_config();
+    # keep going on with data output, if "dirty config" is enabled
+    exit 0 unless ( ($ENV{MUNIN_CAP_DIRTYCONFIG} || 0) == 1 );
 }
 
 # Restore data from previous run
 my ( $prev_time, %prev_diskstats );
 eval {
-	# Using eval, if it breaks while retreive, $R is still undef.
-	# No need to unlink() it, since it will be overriden anyway.
-	( $prev_time, %prev_diskstats ) = choose_old_state();
+    # Using eval, if it breaks while retrieve, $R is still undef.
+    # No need to unlink() it, since it will be overridden anyway.
+    ( $prev_time, %prev_diskstats ) = choose_old_state();
 };
 
 # Persist state from current run
@@ -66,6 +75,20 @@ exit 0;
 ########
 # SUBS #
 ########
+
+# fetch_uptime
+#
+# read /proc/uptime and return it
+
+sub fetch_uptime {
+    open my $FH, "<", '/proc/uptime' or return undef;
+    my $line = <$FH>;
+    chomp($line);
+    my @row = split(/\s+/, $line);
+    close $FH;
+
+    return @row;
+}
 
 # generate_multigraph_data
 #
@@ -148,9 +171,31 @@ sub add_new_state {
     return;
 }
 
+# subtract_wrapping_numbers
+#
+# Will subtract two numbers, but takes into account that the numbers
+# are represented as either a 32-bit value which wraps at 2 ** 32 - 1,
+# or a 64-bit value.
+
+sub subtract_wrapping_numbers {
+    my ( $cur_value, $prev_value ) = @_;
+
+    return $cur_value - $prev_value if $cur_value >= $prev_value;
+
+    # The numbers seems to have wrapped.
+    if ($prev_value <= 2 ** 32) {
+        # Unsigned int wraps here.
+        $cur_value += 2 ** 32;
+    } else {
+        $cur_value += 2 ** 64;
+    }
+
+    return $cur_value - $prev_value;
+}
+
 # calculate_values
 #
-# Calculates all data that get's graphed
+# Calculates all data that gets graphed
 
 sub calculate_values {
     my ( $prev_time, $prev_stats, $cur_stats ) = @_;
@@ -159,16 +204,27 @@ sub calculate_values {
 
     my $interval = time() - $prev_time;
 
-    my $read_ios  = $cur_stats->{'rd_ios'} - $prev_stats->{'rd_ios'};
-    my $write_ios = $cur_stats->{'wr_ios'} - $prev_stats->{'wr_ios'};
+    if ($uptime < $interval) {
+        # system has rebooted
 
-    my $rd_ticks = $cur_stats->{'rd_ticks'} - $prev_stats->{'rd_ticks'};
-    my $wr_ticks = $cur_stats->{'wr_ticks'} - $prev_stats->{'wr_ticks'};
+        $interval = $uptime;
 
-    my $rd_sectors = $cur_stats->{'rd_sectors'} - $prev_stats->{'rd_sectors'};
-    my $wr_sectors = $cur_stats->{'wr_sectors'} - $prev_stats->{'wr_sectors'};
+        # all values will be zero at system reboot
+        for my $entry ( keys %$prev_stats ) {
+            $prev_stats->{$entry} = 0;
+        }
+    }
 
-    my $tot_ticks = $cur_stats->{'tot_ticks'} - $prev_stats->{'tot_ticks'};
+    my $read_ios  = subtract_wrapping_numbers($cur_stats->{'rd_ios'}, $prev_stats->{'rd_ios'});
+    my $write_ios = subtract_wrapping_numbers($cur_stats->{'wr_ios'}, $prev_stats->{'wr_ios'});
+
+    my $rd_ticks = subtract_wrapping_numbers($cur_stats->{'rd_ticks'}, $prev_stats->{'rd_ticks'});
+    my $wr_ticks = subtract_wrapping_numbers($cur_stats->{'wr_ticks'}, $prev_stats->{'wr_ticks'});
+
+    my $rd_sectors = subtract_wrapping_numbers($cur_stats->{'rd_sectors'}, $prev_stats->{'rd_sectors'});
+    my $wr_sectors = subtract_wrapping_numbers($cur_stats->{'wr_sectors'}, $prev_stats->{'wr_sectors'});
+
+    my $tot_ticks = subtract_wrapping_numbers($cur_stats->{'tot_ticks'}, $prev_stats->{'tot_ticks'});
 
     my $read_io_per_sec  = $read_ios / $interval;
     my $write_io_per_sec = $write_ios / $interval;
@@ -194,13 +250,6 @@ sub calculate_values {
       $total_ios ? ( $rd_ticks + $wr_ticks ) / $total_ios / 1000 : 0;
     my $average_rd_wait_in_sec = $read_ios  ? $rd_ticks / $read_ios / 1000  : 0;
     my $average_wr_wait_in_sec = $write_ios ? $wr_ticks / $write_ios / 1000 : 0;
-
-    if ( $average_rd_wait_in_sec < 0 ) {
-      $average_rd_wait_in_sec = 0;
-    }
-    if ( $average_wr_wait_in_sec < 0 ) {
-      $average_wr_wait_in_sec = 0;
-    }
 
     my $average_rd_rq_size_in_kb =
       $read_ios ? $rd_sectors * $bytes_per_sector / 1000 / $read_ios : 0;
@@ -344,10 +393,14 @@ sub read_procfs {
         # There are situations where only _some_ lines (e.g.
         # partitions on older 2.6 kernels) have fewer stats
         # numbers, therefore we'll skip them silently
-        if ( @elems != 14 ) {
+        # - Until before Linux 4.19, there were 14 fields
+        # - Linux 4.19 extended /proc/diskstat to 18 fields
+        # - Linux 5.5 added another two fields (to a total of 20)
+        if ( @elems < 14 ) {
             next;
         }
-        push @lines, \@elems;
+        # Currently, we're only interested in the first 14 fields
+        push @lines, [splice @elems, 0, 14];
     }
 
     close $statfh or croak "Failed to close '/proc/diskstats': $!";
@@ -384,8 +437,11 @@ sub read_sysfs {
 
         my @elems = split /\s+/, $line;
 
-        croak "'$stats_file' doesn't contain exactly 11 values. Aborting"
-          if ( @elems != 11 );
+        # before linux 4.19, /sys/block/<dev>/stat had 11 fields.
+        # in 4.19, four fields for tracking DISCARDs have been added
+        # in 5.5, two fields tracking flush requests have been added
+        croak "'$stats_file' contains less than 11 values. Aborting"
+          if ( @elems < 11 );
 
         # Translate the devicename back before storing the information
         $cur_device =~ tr#!#/#;
@@ -449,8 +505,8 @@ sub parse_diskstats {
         ( $devstat{'short_pretty_device_name'} ) =
           $pretty_device =~ m#/?([^/]+)$#;
 
-        if ($trim_labels) {
-
+        if (defined($graph_width) and ($graph_width != 0)) {
+            # a specific graph width was requested
             $devstat{'pretty_device_name'} =
               trim_label( 'pos', $devstat{'pretty_device_name'} );
             $devstat{'short_pretty_device_name'} =
@@ -584,7 +640,7 @@ sub translate_lvm_name {
 
     my $device_name = basename($entry);
 
-# Check for single-dash-occurence to see if this could be a lvm devicemapper device.
+# Check for single-dash-occurrence to see if this could be a lvm devicemapper device.
     if ( $device_name =~ m/(?<!-)-(?!-)/ ) {
 
         # split device name into vg and lv parts
@@ -645,11 +701,9 @@ sub do_autoconf {
     if ( eval { %stats = parse_diskstats() } && keys %stats ) {
 
         print "yes\n";
-        exit 0;
     }
     else {
-        print "no\n";
-        exit 1;
+        print "no (failed to find disk statistics in sysfs or procfs)\n";
     }
 }
 
@@ -657,8 +711,6 @@ sub do_config {
 
     do_config_root();
     do_config_device();
-
-    exit 0;
 }
 
 # do_config_root
@@ -667,14 +719,17 @@ sub do_config {
 
 sub do_config_root {
 
-    my $config_graph_width = $graph_width;
+    my $extra_graph_settings = "";
 
     my @sorted_devices = sort_by_dm_last( keys %cur_diskstats );
 
-    # If we don't trim labels, we have to find the correct graph width to
-    # accomodate all labels
-    unless ($trim_labels) {
-
+    # Determine a suitable graph width, if trimming is disabled and
+    # graph_width is not specified (i.e. is zero).
+    if (not defined($graph_width)) {
+        # use munin's default behaviour for the graph width
+        # Thus we do not need additional "graph" parameters.
+    } elsif (defined($graph_width) and ($graph_width == 0)) {
+        # calculate a suitable graph width and enforce it
         my @short_labels =
           map { $cur_diskstats{$_}->{'short_pretty_device_name'} }
           keys %cur_diskstats;
@@ -686,10 +741,14 @@ sub do_config_root {
           find_required_graph_width( 'posneg', @short_labels );
         my $graph_width_long = find_required_graph_width( 'pos', @long_labels );
 
-        $config_graph_width =
+        my $minimum_graph_width =
             $graph_width_short > $graph_width_long
           ? $graph_width_short
           : $graph_width_long;
+        $extra_graph_settings .= "graph_width $minimum_graph_width\n";
+    } else {
+        # the width of the graph was specified explicitly
+        $extra_graph_settings .= "graph_width $graph_width\n";
     }
 
     # Print config for latency
@@ -700,8 +759,7 @@ graph_title Disk latency per device
 graph_args --base 1000
 graph_vlabel Average IO Wait (seconds)
 graph_category disk
-graph_width $config_graph_width
-
+$extra_graph_settings
 EOF
 
     for my $device (@sorted_devices) {
@@ -726,9 +784,8 @@ graph_title Utilization per device
 graph_args --base 1000 --lower-limit 0 --upper-limit 100 --rigid
 graph_vlabel % busy
 graph_category disk
-graph_width $config_graph_width
 graph_scale no
-
+$extra_graph_settings
 EOF
 
     for my $device (@sorted_devices) {
@@ -753,9 +810,8 @@ graph_title Throughput per device
 graph_args --base 1024
 graph_vlabel Bytes/\${graph_period} read (-) / write (+)
 graph_category disk
-graph_width $config_graph_width
-graph_info This graph shows averaged throughput for the given disk in bytes.  Higher throughput is usualy linked with higher service time/latency (separate graph).  The graph base is 1024 yeilding Kibi- and Mebi-bytes.
-
+graph_info This graph shows averaged throughput for the given disk in bytes.  Higher throughput is usually linked with higher service time/latency (separate graph).  The graph base is 1024 yielding Kibi- and Mebi-bytes.
+$extra_graph_settings
 EOF
 
     for my $device (@sorted_devices) {
@@ -782,10 +838,9 @@ EOF
 multigraph ${plugin_name}_iops
 graph_title Disk IOs per device
 graph_args --base 1000
-graph_vlabel IOs/\${graph_period} read (-) / write (+) 
+graph_vlabel IOs/\${graph_period} read (-) / write (+)
 graph_category disk
-graph_width $config_graph_width
-
+$extra_graph_settings
 EOF
 
     for my $device (@sorted_devices) {
@@ -820,6 +875,10 @@ sub do_config_device {
         my $pretty_device = $cur_diskstats{$device}->{'pretty_device_name'};
         my $graph_id      = $cur_diskstats{$device}->{'graph_id'};
 
+        # warning levels
+        my $avgrdwait_warning = $ENV{'avgrdwait_warning'} || '0:3';
+        my $avgwrwait_warning = $ENV{'avgwrwait_warning'} || '0:3';
+
         if ( $cur_diskstats{$device}->{'does_latency'} ) {
 
             print <<"EOF";
@@ -844,13 +903,13 @@ avgrdwait.label Read IO Wait time
 avgrdwait.type GAUGE
 avgrdwait.info Average wait time for a read I/O from request start to finish (includes queue times et al)
 avgrdwait.min 0
-avgrdwait.warning 0:3
+avgrdwait.warning $avgrdwait_warning
 avgrdwait.draw LINE1
 avgwrwait.label Write IO Wait time
 avgwrwait.type GAUGE
 avgwrwait.info Average wait time for a write I/O from request start to finish (includes queue times et al)
 avgwrwait.min 0
-avgwrwait.warning 0:3
+avgwrwait.warning $avgwrwait_warning
 avgwrwait.draw LINE1
 
 EOF
@@ -962,7 +1021,10 @@ sub sort_by_dm_last {
         }
     }
 
-    return ( sort @non_dm ), ( sort @dm );
+    return
+        ( sort {$cur_diskstats{$a}->{'graph_id'} cmp $cur_diskstats{$b}->{'graph_id'}} @non_dm ),
+        ( sort {$cur_diskstats{$a}->{'graph_id'} cmp $cur_diskstats{$b}->{'graph_id'}} @dm ),
+    ;
 }
 
 # filter_device_list
@@ -1049,6 +1111,7 @@ sub calculate_pixels {
           $graph_border_width;
     }
     elsif ( $mode eq 'available_characters' ) {
+        # this mode is only used if "graph_width" is non-zero
         $return_data =
           abs( ( $graph_width + $graph_border_width ) / $pixels_per_character )
           - $padding_characters - $data_characters;
@@ -1078,11 +1141,10 @@ sub find_required_graph_width {
 
     my $required_graph_width =
       calculate_pixels( 'required_width', $type, $longest_label_length );
-    return $graph_width if ( $required_graph_width <= $graph_width );
+    return $default_graph_width if ( $required_graph_width <= $default_graph_width );
 
     # Return sufficient graph_width in 50 pixel increments
-    return $graph_width +
-      ( ceil( ( $required_graph_width - $graph_width ) / 50 ) * 50 );
+    return ceil( $required_graph_width / 50 ) * 50;
 }
 
 # trim_label
@@ -1127,6 +1189,14 @@ for running as root enter this in a plugin configuration file:
   [diskstats]
     user root
 
+=head2 Warning levels
+
+You can change the warning levels in a plugin configuration file:
+
+  [diskstats]
+    env.avgrdwait_warning 0:3
+    env.avgwrwait_warning 0:3
+
 =head2 Monitor specific devices
 
 You can specify which devices should get monitored by the plugin via
@@ -1148,14 +1218,24 @@ further information).
 
 =head2 Graph width and labels
 
-This plugin will increase the graph_width dynamically to accomodate
-longer-than-normal device names. You can disable this behavior by
-setting the B<trim_labels> environment variable. Additionally, you can
-specify a fixed graph_width for the graphs.
+Device name labels tend to grow in length. Thus this plugin implements
+(optional) dynamic resizing based on the the B<graph_width> environment
+variable:
+* (default) B<graph_width> is empty/undefined:
+  Munin uses the default width (globally configurable) for the graph.
+  Long names can make at it a bit harder to read the columns. This
+  should work well for different munin themes on different devices.
+* B<graph_width> is non-zero:
+  The graphs will be fixed at the given B<graph_width>.
+  Device label names are truncated, if necessary.  The custom graph
+  width may break the visualization for some themes on some devices.
+* B<graph_width> is zero:
+  The graph width is determined automatically based on the length of
+  device name labels.  The custom graph width may break the
+  visualization for some themes on some devices.
 
   [diskstats]
     # Set graph_width to 450, device names which are longer get trimmed
-    env.trim_labels yes
     env.graph_width 450
 
 
@@ -1185,7 +1265,7 @@ given time frame, resulting in an average time per I/O on the
 block-device level.
 
 This value can give you a good comparison base amongst different
-controllers, storage subsystems and disks for similiar workloads.
+controllers, storage subsystems and disks for similar workloads.
 
 
 =head2 Syscall Wait Time
@@ -1240,10 +1320,6 @@ information about the C<numbers> involved in this module.
 
 L<http://www.westnet.com/~gsmith/content/linux-pdflush.htm> has a nice
 writeup about the pdflush daemon.
-
-=head1 VERSION
-
-  $Id$
 
 =head1 MAGIC MARKERS
 
