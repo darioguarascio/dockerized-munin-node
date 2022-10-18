@@ -14,11 +14,11 @@ RUN apt-get install -y libdbd-pg-perl
 
 RUN apt-get install -y libxml-parser-perl
 
+RUN apt-get install -y ruby
+
 RUN apt-get clean && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 COPY varnishstat.sh /usr/bin/varnishstat
-
-RUN apt-get clean && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN adduser --disabled-password --gecos "" postgres
 
