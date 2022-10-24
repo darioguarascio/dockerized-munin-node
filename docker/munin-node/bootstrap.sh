@@ -4,7 +4,7 @@ MUNIN_CONFIGURATION_FILE=/etc/munin/munin-node.conf
 MUNIN_LOG_FILE=/var/log/munin/munin-node-configure.log
 
 if [ ! -z "$MUNIN_ALLOW" ]; then
-	echo $MUNIN_ALLOW | tr -s ',' '\n' | while read ip; do
+	for ip in `echo $MUNIN_ALLOW | tr -s ',' ' '`; do
 	    echo "cidr_allow $ip" >> $MUNIN_CONFIGURATION_FILE
 	done
 fi
