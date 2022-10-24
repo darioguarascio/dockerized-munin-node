@@ -4,7 +4,9 @@ MUNIN_CONFIGURATION_FILE=/etc/munin/munin-node.conf
 MUNIN_LOG_FILE=/var/log/munin/munin-node-configure.log
 
 if [ ! -z "$MUNIN_ALLOW" ]; then
-    echo "cidr_allow $MUNIN_ALLOW" >> $MUNIN_CONFIGURATION_FILE
+	echo $MUNIN_ALLOW | tr -s ',' '\n' | while read ip; do
+	    echo "cidr_allow $ip" >> $MUNIN_CONFIGURATION_FILE
+	done
 fi
 
 # if /var/lib/muninplugins/ do exist, soft link to /etc/munin/plugins
