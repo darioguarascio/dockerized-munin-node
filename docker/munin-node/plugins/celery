@@ -17,7 +17,9 @@ free.colour ccff00
 EOF
 else
 
-echo free.value $(( $CELERYD_CONCURRENCY * $(curl -s http://$CELERY_URL/dashboard?json=1 | jq -r '.data[] | .hostname' | wc -l) ))
-echo busy.value $(curl -s http://$CELERY_URL/dashboard?json=1 | jq '.data[] | .active' | awk '{s+=$1} END {print s}')
+FREE_WORKERS=$(curl -s http://$CELERY_URL/dashboard?json=1 | jq -r '.data[] | .hostname' | wc -l)
+BUSY_WORKERS=$(curl -s http://$CELERY_URL/dashboard?json=1 | jq '.data[] | .active' | awk '{s+=$1} END {print s}')
+echo free.value $(( $CELERYD_CONCURRENCY * $FREE_WORKERS - $BUSY_WORKERS ))
+echo busy.value $BUSY_WORKERS
 
 fi
