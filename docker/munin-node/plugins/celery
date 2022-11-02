@@ -16,10 +16,10 @@ free.draw STACK
 free.colour ccff00
 EOF
 else
-
-FREE_WORKERS=$(curl -s http://$CELERY_URL/dashboard?json=1 | jq -r '.data[] | .hostname' | wc -l)
-BUSY_WORKERS=$(curl -s http://$CELERY_URL/dashboard?json=1 | jq '.data[] | .active' | awk '{s+=$1} END {print s}')
+curl -s http://$CELERY_URL/dashboard?json=1  > /tmp/celery.json
+FREE_WORKERS=$(cat /tmp/celery.json | jq -r '.data[] | .hostname' | wc -l)
+BUSY_WORKERS=$(cat /tmp/celery.json  | jq '.data[] | .active' | awk '{s+=$1} END {print s}')
 echo free.value $(( $CELERYD_CONCURRENCY * $FREE_WORKERS - $BUSY_WORKERS ))
 echo busy.value $BUSY_WORKERS
-
+rm -f /tmp/celery.json
 fi
