@@ -1,0 +1,23 @@
+#!/bin/sh
+
+if [[ $1 == "config" ]]; then
+cat <<EOF
+graph_title Celery capacity
+graph_args --base 1000 -l 0
+graph_category celery
+graph_order busy
+graph_vlabel processes
+graph_total total
+busy.label busy workers
+busy.draw AREA
+busy.colour
+free.label free slots
+free.draw STACK
+free.colour ccff00
+EOF
+else
+
+echo free.value $(( $CELERYD_CONCURRENCY * $(curl -s http://$CELERY_URL/dashboard?json=1 | jq -r '.data[] | .hostname' | wc -l) ))
+echo busy.value $(curl -s http://$CELERY_URL/dashboard?json=1 | jq '.data[] | .active' | awk '{s+=$1} END {print s}')
+
+fi
