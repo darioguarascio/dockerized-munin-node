@@ -14,7 +14,7 @@ RUN apt-get install -y libdbd-pg-perl
 
 RUN apt-get install -y libxml-parser-perl
 
-RUN apt-get install -y ruby
+RUN apt-get install -y ruby curl jq
 
 RUN apt-get clean && rm -rf /var/cache/apt/archives/* /var/lib/apt/lists/* /tmp/* /var/tmp/*
 

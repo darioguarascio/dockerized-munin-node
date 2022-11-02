@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 if [[ $1 == "config" ]]; then
 cat <<EOF
@@ -10,7 +10,7 @@ graph_vlabel processes
 graph_total total
 busy.label busy workers
 busy.draw AREA
-busy.colour
+busy.colour 33cc00
 free.label free slots
 free.draw STACK
 free.colour ccff00
