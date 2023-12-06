@@ -18,13 +18,13 @@ try:
 except ImportError:
     import simplejson as json
 
+PORT = params[2] if len(params) == 3 else 22222;
+HOST = params[1] if len(params) == 2 else '127.0.0.1';
+
 def get_stats():
     data = '';
 
     params = sys.argv[0].split('_');
-
-    PORT = params[2] if len(params) == 3 else 22222;
-    HOST = params[1] if len(params) == 2 else '127.0.0.1';
 
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.connect((HOST, PORT))
@@ -48,8 +48,9 @@ def process_data():
             print("requests_"+key+".value"+" "+str(total))
 
 def process_config():
-    print("graph_title Twemproxy requests/s")
-    print("graph_category nutcracker")
+
+    print("graph_title Twemproxy["+HOST+":"+PORT+"] requests/s")
+    print("graph_category twemproxy")
     print("graph_vlabel requests/s")
 
     data = get_stats();
