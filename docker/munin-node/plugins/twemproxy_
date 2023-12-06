@@ -1,0 +1,66 @@
+#!/usr/bin/python3
+
+# This is a monitoring plugin for twemproxy
+#
+# HOST and PORT are embedded in filename, like:
+#
+# twemproxy_127.0.0.1_22222 or twemproxy_10.0.0.1
+#
+# any questions to edgarmveiga at gmail dot com
+#
+
+import socket
+import sys
+import os
+
+try:
+    import json
+except ImportError:
+    import simplejson as json
+
+def get_stats():
+    data = '';
+
+    params = sys.argv[0].split('_');
+
+    PORT = params[2] if len(params) == 3 else 22222;
+    HOST = params[1] if len(params) == 2 else '127.0.0.1';
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.connect((HOST, PORT))
+
+    file = s.makefile('r')
+    data = file.readline();
+    s.close()
+
+    return json.loads(data);
+
+def process_data():
+    data = get_stats();
+    # get pools
+    for key, value in data.items():
+        if(type(value) == dict):
+            total = 0
+            # get server requests
+            for pool_key, pool_value in value.items():
+                if(type(pool_value) == dict):
+                    total += pool_value["requests"]
+            print("requests_"+key+".value"+" "+str(total))
+
+def process_config():
+    print("graph_title Twemproxy requests/s")
+    print("graph_category nutcracker")
+    print("graph_vlabel requests/s")
+
+    data = get_stats();
+    for key, value in data.items():
+        if(type(value) == dict):
+            print("requests_"+key+".label "+key)
+            print("requests_"+key+".type COUNTER")
+            print("requests_"+key+".min 0")
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "config":
+        process_config()
+    else:
+        process_data()
