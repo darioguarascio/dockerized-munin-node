@@ -49,7 +49,7 @@ def process_data():
 
 def process_config():
 
-    print("graph_title Twemproxy["+HOST+":"+PORT+"] requests/s")
+    print("graph_title Twemproxy["+HOST+":"+str(PORT)+"] requests/s")
     print("graph_category twemproxy")
     print("graph_vlabel requests/s")
 
