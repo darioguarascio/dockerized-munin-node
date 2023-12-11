@@ -89,22 +89,22 @@ EOF
 fi
 
 
-if [ -r /mounted/proc_net_dev ]
+if [ -r /proc/net/dev ]
 then
-    ipv4=$( echo "`egrep -v bond\|lo /mounted/proc_net_dev | awk -F' ' '{print $2+$10}' | paste -sd+ | bc` * 8" | bc )
+    ipv4=$( echo "`egrep -v bond\|lo /proc/net/dev | awk -F' ' '{print $2+$10}' | paste -sd+ | bc` * 8" | bc )
     echo "IPv4.value $ipv4"
 else
     echo "IPv4.value 0"
-    echo "W: Unable to read /mounted/proc_net_dev" >&2
+    echo "W: Unable to read /proc/net/dev" >&2
 fi
 
-if [ -r /mounted/proc_net_snmp6 ]
+if [ -r /proc/net/snmp6 ]
 then
-    ipv6=$( echo "`egrep Ip6InOctets\|Ip6OutOctets /mounted/proc_net_snmp6 | awk -F' ' '{print $2}' | paste -sd+ | bc` * 8"  | bc )
+    ipv6=$( echo "`egrep Ip6InOctets\|Ip6OutOctets /proc/net/snmp6 | awk -F' ' '{print $2}' | paste -sd+ | bc` * 8"  | bc )
     echo "IPv6.value $ipv6"
 else
     echo "IPv6.value 0"
-    echo "W: Unable to read /mounted/proc_net_snmp6" >&2
+    echo "W: Unable to read /proc/net/snmp6" >&2
 fi
 echo "total.value $( echo $ipv4 + $ipv6 | bc )"
 
