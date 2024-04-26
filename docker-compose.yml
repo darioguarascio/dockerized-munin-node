@@ -6,7 +6,7 @@ services:
     privileged: true
     restart: "always"
     build:
-      network: host
+      # network: host
       context: ./docker/munin-node
     environment:
       MUNIN_ALLOW: ${MUNIN_ALLOW:-0.0.0.0/0}

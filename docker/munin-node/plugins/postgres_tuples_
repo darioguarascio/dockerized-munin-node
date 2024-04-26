@@ -53,6 +53,7 @@ dated June, 1991.
 
 =cut
 
+
 use strict;
 use warnings;
 
@@ -63,35 +64,20 @@ my $pg = Munin::Plugin::Pgsql->new(
     title     => 'PostgreSQL tuple access',
     info      => 'Tuple access',
     vlabel    => 'Tuples / sec',
-    basequery => [
+    basequery =>
         "SELECT COALESCE(sum(seq_tup_read),0) AS seqread, COALESCE(sum(idx_tup_fetch),0) AS idxfetch,"
             . " COALESCE(sum(n_tup_ins),0) AS inserted, COALESCE(sum(n_tup_upd),0) AS updated,"
             . " COALESCE(sum(n_tup_del),0) AS deleted, COALESCE(sum(n_tup_hot_upd),0) AS hotupdated FROM pg_stat_user_tables",
-        [
-            8.2,
-            "SELECT COALESCE(sum(seq_tup_read),0) AS seqread, COALESCE(sum(idx_tup_fetch),0) AS idxfetch,"
-                . " COALESCE(sum(n_tup_ins),0) AS inserted, COALESCE(sum(n_tup_upd),0) AS updated,"
-                . " COALESCE(sum(n_tup_del),0) AS deleted FROM pg_stat_user_tables",
-        ],
-    ],
+    wildcardfilter => "",
+
     paramdatabase => 1,
     pivotquery    => 1,
-    configquery   => [
+    configquery   =>
         "VALUES ('seqread','Tuples sequentally read'), ('idxfetch','Tuples index fetched'), ('inserted','Tuples inserted'),"
             . " ('updated','Tuples updated'),('deleted','Tuples deleted'),('hotupdated','Tuples HOT updated')",
-        [
-            8.2,
-            "VALUES ('seqread','Tuples sequentally read'), ('idxfetch','Tuples index fetched'), ('inserted','Tuples inserted'),"
-                . " ('updated','Tuples updated'),('deleted','Tuples deleted')"
-        ], [
-            8.1,
-            "SELECT 'seqread','Tuples sequentially read' UNION ALL SELECT 'idxfetch','Tuples index fetched' UNION ALL "
-                . "SELECT 'inserted','Tuples inserted' UNION ALL SELECT 'updated','Tuples updated' UNION ALL "
-                . "SELECT 'deleted','Tuples deleted'"
-        ],
-    ],
+
     suggestquery =>
-        "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate AND NOT datname='postgres' ORDER BY 1 LIMIT 10",
+        "SELECT datname FROM pg_database WHERE datallowconn AND NOT datistemplate AND NOT datname='postgres' UNION ALL SELECT 'ALL' ORDER BY 1 LIMIT 10",
     graphtype => 'DERIVE',
 );
 
